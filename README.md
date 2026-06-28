@@ -15,7 +15,7 @@ This repository contains MATLAB codes for estimating soil thermal diffusivity us
 
 These codes accompany the paper:
 
-> "Estimation of Thermal Diffusivity and Modelling of Soil Temperature for Mapping Thermal Regimes in Iran Using Machine Learning and Remote Sensing Data"
+> "A Hybrid Machine Learning–Physics Approach for Retrieving Thermal Diffusivity, Simulating Soil Temperature, and Zoning Thermal Regimes in Iran"
 
 ## Requirements
 
