@@ -2,9 +2,7 @@
 % Random Forest (RF) Model for Soil Thermal Diffusivity Prediction
 %
 % This code accompanies the paper:
-% "Estimation of Thermal Diffusivity and Modelling of Soil Temperature 
-%  for Mapping Thermal Regimes in Iran Using Machine Learning and 
-%  Remote Sensing Data"
+% "A Hybrid Machine Learning–Physics Approach for Retrieving Thermal Diffusivity, Simulating Soil Temperature, and Zoning Thermal Regimes in Iran"
 %
 % GitHub: https://github.com/86311972
 % ========================================================================
