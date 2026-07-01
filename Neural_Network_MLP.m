@@ -1,8 +1,9 @@
 %% ========================================================================
-% Neural Network (MLP) Model for Soil Thermal Diffusivity Prediction
+% Neural Network (MLP) for Soil Thermal Diffusivity Prediction
 %
 % This code accompanies the paper:
-% "A Hybrid Machine Learning–Physics Approach for Retrieving Thermal Diffusivity, Simulating Soil Temperature, and Zoning Thermal Regimes in Iran"
+% "A Hybrid Machine Learning–Physics Approach for Retrieving Thermal Diffusivity, 
+% Simulating Soil Temperature, and Zoning Thermal Regimes in Iran"
 %
 % GitHub: https://github.com/86311972
 % ========================================================================
@@ -226,11 +227,15 @@ for hidden_idx = 1:length(param_grid.HiddenLayerSizes)
                         mean_rmse = mean(cv_rmse(valid_folds));
                         mean_mae = mean(cv_mae(valid_folds));
                         std_r2 = std(cv_r2(valid_folds));
+                        std_rmse = std(cv_rmse(valid_folds));
+                        std_mae = std(cv_mae(valid_folds));
                     else
                         mean_r2 = 0;
                         mean_rmse = inf;
                         mean_mae = inf;
                         std_r2 = 0;
+                        std_rmse = 0;
+                        std_mae = 0;
                     end
                     
                     % Store results
@@ -243,7 +248,9 @@ for hidden_idx = 1:length(param_grid.HiddenLayerSizes)
                     result.Mean_R2 = mean_r2;
                     result.Std_R2 = std_r2;
                     result.Mean_RMSE = mean_rmse;
+                    result.Std_RMSE = std_rmse;
                     result.Mean_MAE = mean_mae;
+                    result.Std_MAE = std_mae;
                     
                     results = [results; result];
                     
@@ -258,13 +265,28 @@ for hidden_idx = 1:length(param_grid.HiddenLayerSizes)
                         best_validation_metrics.Mean_R2 = mean_r2;
                         best_validation_metrics.Std_R2 = std_r2;
                         best_validation_metrics.Mean_RMSE = mean_rmse;
+                        best_validation_metrics.Std_RMSE = std_rmse;
                         best_validation_metrics.Mean_MAE = mean_mae;
+                        best_validation_metrics.Std_MAE = std_mae;
                     end
                 end
             end
         end
     end
 end
+
+%% 5.5 Display optimal hyperparameters
+fprintf('\n========================================\n');
+fprintf('   Optimal Neural Network Hyperparameters   \n');
+fprintf('========================================\n');
+fprintf('Hidden layer structure: [%s]\n', num2str(best_params.HiddenLayerSize));
+fprintf('Activation function: %s\n', best_params.ActivationFunction);
+fprintf('Learning rate: %.4f\n', best_params.LearningRate);
+fprintf('Maximum epochs: %d\n', best_params.MaxEpochs);
+fprintf('Regularization: %.3f\n', best_params.Regularization);
+fprintf('Cross-validated R²: %.4f ± %.4f\n', ...
+    best_validation_metrics.Mean_R2, best_validation_metrics.Std_R2);
+fprintf('========================================\n');
 
 %% 6. Train final model with best hyperparameters
 fprintf('\n=== 6. Training Final Model ===\n');
@@ -328,8 +350,72 @@ fprintf('NSE: %.4f\n', nse);
 fprintf('PBIAS: %.2f%%\n', pbias);
 fprintf('Generalization gap (R²): %.4f\n', generalization_gap_r2);
 
-%% 7. Generate publication-quality figures
-fprintf('\n=== 7. Generating Figures ===\n');
+%% 7. Extract training and validation indices from final model
+fprintf('\n=== 7. Training/Validation Split ===\n');
+
+train_idx = tr_final.trainInd;
+val_idx = tr_final.valInd;
+
+fprintf('Training samples: %d, Validation samples: %d\n', length(train_idx), length(val_idx));
+
+% Predict on training data
+X_train_selected = X_train_norm(train_idx, :)';
+y_pred_train_norm = final_net(X_train_selected);
+y_pred_train = denormalize_minmax(y_pred_train_norm', y_min, y_range);
+
+% Predict on validation data
+X_val_selected = X_train_norm(val_idx, :)';
+y_pred_val_norm = final_net(X_val_selected);
+y_pred_val = denormalize_minmax(y_pred_val_norm', y_min, y_range);
+
+% True values
+y_true_train = y_train(train_idx);
+y_true_val = y_train(val_idx);
+
+% Training metrics
+train_r2 = corr(y_pred_train, y_true_train)^2;
+train_rmse = sqrt(mean((y_pred_train - y_true_train).^2));
+train_mae = mean(abs(y_pred_train - y_true_train));
+train_mse = mean((y_pred_train - y_true_train).^2);
+train_nse = 1 - sum((y_true_train - y_pred_train).^2) / sum((y_true_train - mean(y_true_train)).^2);
+train_pbias = 100 * sum(y_true_train - y_pred_train) / sum(y_true_train);
+
+% Validation metrics
+val_r2 = corr(y_pred_val, y_true_val)^2;
+val_rmse = sqrt(mean((y_pred_val - y_true_val).^2));
+val_mae = mean(abs(y_pred_val - y_true_val));
+val_mse = mean((y_pred_val - y_true_val).^2);
+val_nse = 1 - sum((y_true_val - y_pred_val).^2) / sum((y_true_val - mean(y_true_val)).^2);
+val_pbias = 100 * sum(y_true_val - y_pred_val) / sum(y_true_val);
+
+%% 8. Final performance summary table
+fprintf('\n================================================================================\n');
+fprintf('                  Neural Network Model Performance Summary                      \n');
+fprintf('================================================================================\n');
+fprintf('Metric    |  Training   | Validation  |  CV (Mean ± Std)\n');
+fprintf('--------------------------------------------------------------------------------\n');
+fprintf('R²        |   %.4f    |   %.4f    |   %.4f ± %.4f\n', ...
+    train_r2, val_r2, best_validation_metrics.Mean_R2, best_validation_metrics.Std_R2);
+fprintf('RMSE      |   %.4f    |   %.4f    |   %.4f ± %.4f\n', ...
+    train_rmse, val_rmse, best_validation_metrics.Mean_RMSE, best_validation_metrics.Std_RMSE);
+fprintf('MAE       |   %.4f    |   %.4f    |   %.4f ± %.4f\n', ...
+    train_mae, val_mae, best_validation_metrics.Mean_MAE, best_validation_metrics.Std_MAE);
+fprintf('MSE       |   %.4f    |   %.4f    |       -\n', train_mse, val_mse);
+fprintf('NSE       |   %.4f    |   %.4f    |       -\n', train_nse, val_nse);
+fprintf('PBIAS     |   %.2f%%   |   %.2f%%   |       -\n', train_pbias, val_pbias);
+fprintf('================================================================================\n');
+
+% Save results table as CSV
+results_table = table(...
+    [train_r2; train_rmse; train_mae; train_mse; train_nse; train_pbias], ...
+    [val_r2; val_rmse; val_mae; val_mse; val_nse; val_pbias], ...
+    [best_validation_metrics.Mean_R2; best_validation_metrics.Mean_RMSE; best_validation_metrics.Mean_MAE; NaN; NaN; NaN], ...
+    'VariableNames', {'Training', 'Validation', 'CV'}, ...
+    'RowNames', {'R²', 'RMSE', 'MAE', 'MSE', 'NSE', 'PBIAS'});
+writetable(results_table, fullfile(output_path, 'NeuralNetwork_Results.csv'), 'WriteRowNames', true);
+
+%% 9. Generate publication-quality figures
+fprintf('\n=== 9. Generating Figures ===\n');
 
 figure('Position', [100, 100, 1400, 1000], 'Color', 'white');
 
@@ -399,11 +485,85 @@ ylabel('Relative Importance');
 grid on;
 
 % Save figure
-print(gcf, fullfile(output_path, 'Neural_Network_Results.png'), '-dpng', '-r300');
-fprintf('Figure saved: %s\n', fullfile(output_path, 'Neural_Network_Results.png'));
+print(gcf, fullfile(output_path, 'NeuralNetwork_Results.png'), '-dpng', '-r300');
+fprintf('Figure saved: %s\n', fullfile(output_path, 'NeuralNetwork_Results.png'));
 
-%% 8. Regional prediction (GeoTIFF raster files)
-fprintf('\n=== 8. Regional Prediction ===\n');
+%% 10. Save results
+fprintf('\n=== 10. Saving Results ===\n');
+
+save(fullfile(output_path, 'NeuralNetwork_Model.mat'), ...
+     'final_net', 'best_params', 'best_validation_metrics', ...
+     'final_r2', 'final_rmse', 'final_mae', 'tr_final', ...
+     'train_r2', 'val_r2', 'train_rmse', 'val_rmse', ...
+     'train_mae', 'val_mae', 'vif_values', 'correlation_matrix', ...
+     'x_min', 'x_range', 'y_min', 'y_range', 'results', '-v7.3');
+
+% Save report
+report_file = fullfile(output_path, 'NeuralNetwork_Report.txt');
+fid = fopen(report_file, 'w');
+
+fprintf(fid, '========================================\n');
+fprintf(fid, 'Neural Network Model Summary Report\n');
+fprintf(fid, '========================================\n\n');
+
+fprintf(fid, 'Best Hyperparameters:\n');
+fprintf(fid, '  Hidden layer structure: [%s]\n', num2str(best_params.HiddenLayerSize));
+fprintf(fid, '  Activation function: %s\n', best_params.ActivationFunction);
+fprintf(fid, '  Training function: %s\n', 'trainlm');
+fprintf(fid, '  Learning rate: %.4f\n', best_params.LearningRate);
+fprintf(fid, '  Maximum epochs: %d\n', best_params.MaxEpochs);
+fprintf(fid, '  Regularization parameter: %.3f\n\n', best_params.Regularization);
+
+% Calculate number of parameters
+input_size = 7;
+output_size = 1;
+if isscalar(best_params.HiddenLayerSize)
+    num_params = (input_size * best_params.HiddenLayerSize) + (best_params.HiddenLayerSize * output_size) + best_params.HiddenLayerSize + output_size;
+else
+    num_params = (input_size * best_params.HiddenLayerSize(1)) + (best_params.HiddenLayerSize(1) * best_params.HiddenLayerSize(2)) + ...
+                (best_params.HiddenLayerSize(2) * output_size) + sum(best_params.HiddenLayerSize) + output_size;
+end
+fprintf(fid, 'Number of parameters: ~%d\n', num_params);
+fprintf(fid, 'Data-to-parameter ratio: %.2f:1\n\n', length(y_train)/num_params);
+
+fprintf(fid, 'Performance Summary:\n');
+fprintf(fid, '--------------------------------------------------------------------------------\n');
+fprintf(fid, 'Metric    |  Training   | Validation  |  CV (Mean ± Std)\n');
+fprintf(fid, '--------------------------------------------------------------------------------\n');
+fprintf(fid, 'R²        |   %.4f    |   %.4f    |   %.4f ± %.4f\n', ...
+    train_r2, val_r2, best_validation_metrics.Mean_R2, best_validation_metrics.Std_R2);
+fprintf(fid, 'RMSE      |   %.4f    |   %.4f    |   %.4f ± %.4f\n', ...
+    train_rmse, val_rmse, best_validation_metrics.Mean_RMSE, best_validation_metrics.Std_RMSE);
+fprintf(fid, 'MAE       |   %.4f    |   %.4f    |   %.4f ± %.4f\n', ...
+    train_mae, val_mae, best_validation_metrics.Mean_MAE, best_validation_metrics.Std_MAE);
+fprintf(fid, 'MSE       |   %.4f    |   %.4f    |       -\n', train_mse, val_mse);
+fprintf(fid, 'NSE       |   %.4f    |   %.4f    |       -\n', train_nse, val_nse);
+fprintf(fid, 'PBIAS     |   %.2f%%   |   %.2f%%   |       -\n', train_pbias, val_pbias);
+fprintf(fid, '--------------------------------------------------------------------------------\n\n');
+
+fprintf(fid, 'Variable Importance (Sensitivity Analysis):\n');
+for i = 1:length(variable_names_cell)
+    fprintf(fid, '  %s: %.4f\n', variable_names_cell{i}, importance_ann(i));
+end
+
+fprintf(fid, '\nVIF Analysis:\n');
+for i = 1:length(variable_names_cell)
+    status = 'Acceptable';
+    if vif_values(i) > 10
+        status = 'Severe multicollinearity';
+    elseif vif_values(i) > 5
+        status = 'Moderate multicollinearity';
+    end
+    fprintf(fid, '  %s: %.2f (%s)\n', variable_names_cell{i}, vif_values(i), status);
+end
+
+fprintf(fid, '\nGeneralization Analysis:\n');
+fprintf(fid, '  Generalization gap (R²): %.4f\n', generalization_gap_r2);
+
+fclose(fid);
+
+%% 11. Regional prediction (GeoTIFF raster files)
+fprintf('\n=== 11. Regional Prediction ===\n');
 
 % List of raster files (USER MUST MATCH THESE NAMES TO THEIR FILES)
 raster_names = {'ndvi_yearly', 'ssta_day', 'ssta_yearly', ...
@@ -430,7 +590,7 @@ for i = 1:num_vars
     [layer, ~] = readgeoraster(filename);
     all_layers(:,:,i) = single(layer);
     fprintf('  Loaded: %s\n', raster_names{i});
-end
+}
 
 % Calculate soil texture for the region
 fprintf('Calculating soil texture index for region...\n');
@@ -439,7 +599,6 @@ sand_map = all_layers(:,:,6);
 silt_map = all_layers(:,:,7);
 
 total_map = clay_map + sand_map + silt_map;
-% Avoid division by zero
 total_map(total_map == 0) = 1;
 
 clay_percent_map = (clay_map ./ total_map) * 100;
@@ -479,7 +638,7 @@ output_raster = fullfile(output_path, 'Thermal_Conductivity_ANN.tif');
 geotiffwrite(output_raster, thermal_cond_map, R, 'CoordRefSysCode', 4326);
 fprintf('Regional prediction map saved: %s\n', output_raster);
 
-% Create color map figure for regional prediction
+% Create color map figure
 figure('Position', [200, 200, 800, 600], 'Color', 'white');
 imagesc(thermal_cond_map, 'AlphaData', ~isnan(thermal_cond_map));
 colorbar;
@@ -489,73 +648,6 @@ xlabel('Column');
 ylabel('Row');
 axis equal;
 print(gcf, fullfile(output_path, 'Thermal_Conductivity_Map_ANN.png'), '-dpng', '-r300');
-
-%% 9. Save results
-fprintf('\n=== 9. Saving Results ===\n');
-
-% Save model and parameters
-save(fullfile(output_path, 'Neural_Network_Model.mat'), ...
-     'final_net', 'best_params', 'best_validation_metrics', ...
-     'final_r2', 'final_rmse', 'final_mae', 'tr_final', ...
-     'vif_values', 'correlation_matrix', 'x_min', 'x_range', ...
-     'y_min', 'y_range', 'results', 'variable_names_cell', '-v7.3');
-
-% Create summary report
-report_file = fullfile(output_path, 'Neural_Network_Report.txt');
-fid = fopen(report_file, 'w');
-
-fprintf(fid, '========================================\n');
-fprintf(fid, 'Neural Network Model Summary Report\n');
-fprintf(fid, '========================================\n\n');
-
-fprintf(fid, 'Best Hyperparameters:\n');
-fprintf(fid, '  Hidden layer structure: [%s]\n', num2str(best_params.HiddenLayerSize));
-fprintf(fid, '  Activation function: %s\n', best_params.ActivationFunction);
-fprintf(fid, '  Training function: %s\n', 'trainlm');
-fprintf(fid, '  Learning rate: %.4f\n', best_params.LearningRate);
-fprintf(fid, '  Maximum epochs: %d\n', best_params.MaxEpochs);
-fprintf(fid, '  Regularization parameter: %.3f\n\n', best_params.Regularization);
-
-% Calculate number of parameters
-input_size = 7;
-output_size = 1;
-if isscalar(best_params.HiddenLayerSize)
-    num_params = (input_size * best_params.HiddenLayerSize) + (best_params.HiddenLayerSize * output_size) + best_params.HiddenLayerSize + output_size;
-else
-    num_params = (input_size * best_params.HiddenLayerSize(1)) + (best_params.HiddenLayerSize(1) * best_params.HiddenLayerSize(2)) + ...
-                (best_params.HiddenLayerSize(2) * output_size) + sum(best_params.HiddenLayerSize) + output_size;
-end
-fprintf(fid, 'Number of parameters: ~%d\n', num_params);
-fprintf(fid, 'Data-to-parameter ratio: %.2f:1\n\n', length(y_train)/num_params);
-
-fprintf(fid, 'Model Performance Metrics:\n');
-fprintf(fid, '  R²: %.4f\n', final_r2);
-fprintf(fid, '  RMSE: %.4f\n', final_rmse);
-fprintf(fid, '  MAE: %.4f\n', final_mae);
-fprintf(fid, '  MSE: %.4f\n', mse);
-fprintf(fid, '  NSE: %.4f\n', nse);
-fprintf(fid, '  PBIAS: %.2f%%\n\n', pbias);
-
-fprintf(fid, 'Cross-Validation Results (5-fold):\n');
-fprintf(fid, '  Mean R²: %.4f ± %.4f\n', best_validation_metrics.Mean_R2, best_validation_metrics.Std_R2);
-fprintf(fid, '  Mean RMSE: %.4f\n', best_validation_metrics.Mean_RMSE);
-fprintf(fid, '  Mean MAE: %.4f\n\n', best_validation_metrics.Mean_MAE);
-
-fprintf(fid, 'Variable Importance (Sensitivity Analysis):\n');
-for i = 1:length(variable_names_cell)
-    fprintf(fid, '  %s: %.4f\n', variable_names_cell{i}, importance_ann(i));
-end
-
-fprintf(fid, '\nVIF Analysis:\n');
-for i = 1:length(variable_names_cell)
-    fprintf(fid, '  %s: %.2f\n', variable_names_cell{i}, vif_values(i));
-end
-
-fprintf(fid, '\nGeneralization Analysis:\n');
-fprintf(fid, '  Generalization gap (R²): %.4f\n', generalization_gap_r2);
-
-fclose(fid);
-fprintf('Report saved: %s\n', report_file);
 
 fprintf('\n========================================\n');
 fprintf('Process completed successfully!\n');
